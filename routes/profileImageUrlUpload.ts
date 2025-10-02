@@ -4,6 +4,7 @@
  */
 
 import fs from 'node:fs'
+import net from 'node:net'
 import { Readable } from 'node:stream'
 import { finished } from 'node:stream/promises'
 import { type Request, type Response, type NextFunction } from 'express'
@@ -29,8 +30,17 @@ export function profileImageUrlUpload () {
       } catch (e) {
         return res.status(400).send('Invalid image URL')
       }
-      if (!allowedHosts.includes(parsed.hostname)) {
-        return res.status(400).send('Image hosting domain is not allowed')
+      // Additional SSRF protection: only allow https scheme, no IPs, and exact hostname
+      const isIPAddress = net.isIP(parsed.hostname) !== 0
+      const isLocalhost = /^localhost$|^127\.0\.0\.1$|^0\.0\.0\.0$|^::1$/.test(parsed.hostname)
+      const allowedHostsLower = allowedHosts.map(h => h.toLowerCase())
+      if (
+        parsed.protocol !== 'https:' ||
+        isIPAddress ||
+        isLocalhost ||
+        !allowedHostsLower.includes(parsed.hostname.toLowerCase())
+      ) {
+        return res.status(400).send('Image hosting domain or protocol is not allowed')
       }
       if (url.match(/(.)*solve\/challenges\/server-side(.)*/) !== null) req.app.locals.abused_ssrf_bug = true
       const loggedInUser = security.authenticatedUsers.get(req.cookies.token)
